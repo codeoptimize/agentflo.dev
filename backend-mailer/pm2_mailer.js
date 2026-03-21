@@ -23,9 +23,32 @@ app.listen(PORT, () => {
 // --- 2. THE MAILER SCRIPT WITH HUMAN JITTER ---
 const EMAIL_LIST_PATH = './emails.txt';
 
-// Helper to generate a random delay between min and max (in milliseconds)
 function getRandomDelay(minMs, maxMs) {
   return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
+// Fetch the central source of truth for sent emails directly from GitHub raw content
+function fetchSentEmails() {
+  try {
+    const url = 'https://raw.githubusercontent.com/codeoptimize/data/main/email-history.log';
+    // Use curl to download the file directly, avoiding full git clones here
+    const content = execSync(`curl -s -H "Authorization: token ${process.env.GH_TOKEN}" ${url}`).toString();
+    
+    // Extract just the email addresses from the lines using a quick regex
+    const sentEmails = [];
+    const lines = content.split('\n');
+    const regex = /Successfully sent to ([^\s]+) \(/;
+    for (const line of lines) {
+      const match = line.match(regex);
+      if (match && match[1]) {
+        sentEmails.push(match[1].toLowerCase());
+      }
+    }
+    return new Set(sentEmails);
+  } catch (e) {
+    console.log(`[${new Date().toISOString()}] Warning: Could not fetch central log history from Github. Relying on local tracking only.`);
+    return new Set();
+  }
 }
 
 async function processNextEmail() {
@@ -46,9 +69,19 @@ async function processNextEmail() {
     return;
   }
 
+  // Deduplication check: cross-reference local queue against global github history
+  const globalSentSet = fetchSentEmails();
+  const originalCount = emails.length;
+  emails = emails.filter(email => !globalSentSet.has(email.toLowerCase()));
+  
+  if (emails.length < originalCount) {
+    console.log(`[${new Date().toISOString()}] Ephemeral Filter: Removed ${originalCount - emails.length} emails that were already marked as sent in the global GitHub history log.`);
+    // Update local file to remove those duplicates immediately
+    fs.writeFileSync(EMAIL_LIST_PATH, emails.join('\n') + '\n');
+  }
+
   if (emails.length === 0) {
     console.log(`[${new Date().toISOString()}] All emails processed. Waiting for new emails...`);
-    // Check again in 5 minutes just in case the file is refilled
     setTimeout(processNextEmail, 300000);
     return;
   }
@@ -57,7 +90,6 @@ async function processNextEmail() {
   console.log(`\n[${new Date().toISOString()}] [${emails.length} remaining] Preparing to send to ${targetEmail}...`);
 
   try {
-    // We execute mailer.js using node instead of dotenvx run since dotenv.config() is inside mailer.js now
     const output = execSync(`timeout 30s node mailer.js "${targetEmail}"`, { encoding: 'utf-8' });
     console.log(output.trim());
 
@@ -67,17 +99,9 @@ async function processNextEmail() {
 
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Execution failed for ${targetEmail}. Error: ${err.message}`);
-    // If we get blocked (like the 550 5.4.6 error), we should NOT delete the email.
-    // However, if the email was malformed, we should skip it.
-    // For now, let's keep the email in the list so it can be retried later when Zoho lifts the ban,
-    // but we will impose a very long wait time.
-    
-    // Instead of deleting, just log it. The script will simply retry it next time.
   }
 
   // --- HUMAN JITTER DELAY CALCULATION ---
-  // To bypass Zoho's dynamic velocity filters, sleep for a random duration
-  // between 2.5 minutes (150,000 ms) and 6 minutes (360,000 ms).
   const MIN_DELAY = 150000;
   const MAX_DELAY = 360000;
   const jitterDelay = getRandomDelay(MIN_DELAY, MAX_DELAY);
@@ -89,5 +113,5 @@ async function processNextEmail() {
 }
 
 // Start the sequence immediately
-console.log(`[${new Date().toISOString()}] Starting mailer sequence with Human Jitter...`);
+console.log(`[${new Date().toISOString()}] Starting mailer sequence with Human Jitter and Global Deduplication...`);
 processNextEmail();

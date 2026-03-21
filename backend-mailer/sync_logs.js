@@ -2,7 +2,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 
 const PM2_LOG_PATH = '/home/jules/.pm2/logs/zoho-mailer-out.log';
-const REPO_URL = 'https://${process.env.GH_TOKEN}@github.com/codeoptimize/data.git';
+const REPO_URL = `https://${process.env.GH_TOKEN}@github.com/codeoptimize/data.git`;
 const REPO_DIR = '/app/data_repo';
 const CLEAN_LOG_PATH = `${REPO_DIR}/email-history.log`;
 
