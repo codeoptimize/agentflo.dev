@@ -54,8 +54,8 @@ const FINAL_HTML = HTML_TEMPLATE + hiddenJitterHtml;
 async function sendSingleEmail() {
   const transporter = nodemailer.createTransport({
     host: 'smtp.zoho.in',
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false,
     pool: false,
     connectionTimeout: 15000,
     greetingTimeout: 15000,
