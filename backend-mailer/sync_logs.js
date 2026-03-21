@@ -1,24 +1,31 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 
-const PM2_LOG_PATH = '/home/jules/.pm2/logs/zoho-mailer-out.log';
-const REPO_URL = `https://${process.env.GH_TOKEN}@github.com/codeoptimize/data.git`;
-const REPO_DIR = '/app/data_repo';
-const CLEAN_LOG_PATH = `${REPO_DIR}/email-history.log`;
+const PM2_LOG_PATH = '/opt/render/.pm2/logs/zoho-mailer-out.log';
+const CLEAN_LOG_PATH = '/app/data_repo/email-history.log';
 
 function runGitSync() {
   try {
+    const REPO_URL = "https://" + process.env.GH_TOKEN + "@github.com/codeoptimize/data.git";
+    const REPO_DIR = '/app/data_repo';
+    
     // 1. Ensure the target repository is cloned locally
     if (!fs.existsSync(REPO_DIR)) {
       console.log(`[${new Date().toISOString()}] Cloning data repository...`);
       execSync(`git clone ${REPO_URL} ${REPO_DIR}`);
     } else {
-      // Pull latest changes before we start modifying
       execSync('git pull origin main --rebase', { cwd: REPO_DIR });
     }
 
-    // 2. Read the raw PM2 logs
-    const rawLogs = fs.readFileSync(PM2_LOG_PATH, 'utf-8');
+    // 2. Read the raw PM2 logs (check default and render paths)
+    let rawLogs = '';
+    try {
+      rawLogs = fs.readFileSync('/opt/render/.pm2/logs/pm2_mailer-out.log', 'utf-8');
+    } catch(e) {
+      try {
+        rawLogs = fs.readFileSync('/home/render/.pm2/logs/pm2_mailer-out.log', 'utf-8');
+      } catch(e2) {}
+    }
     
     // 3. Filter for only the "Successfully sent to" lines with timestamps
     const cleanLogs = rawLogs
@@ -37,15 +44,10 @@ function runGitSync() {
     const status = execSync('git status --porcelain email-history.log', { cwd: REPO_DIR }).toString();
     
     if (status) {
-      // Add the file
       execSync('git add email-history.log', { cwd: REPO_DIR });
-      
-      // Commit the changes (skip CI to prevent infinite build loops)
       execSync('git commit -m "chore(logs): auto-update email history [skip ci]"', { cwd: REPO_DIR });
-      
-      // Push to the remote branch 'main'
       execSync('git push origin HEAD:main', { cwd: REPO_DIR });
-      console.log(`[${new Date().toISOString()}] Successfully synced new logs to GitHub (codeoptimize/data).`);
+      console.log(`[${new Date().toISOString()}] Successfully synced new logs to GitHub.`);
     } else {
       console.log(`[${new Date().toISOString()}] No new logs to sync.`);
     }

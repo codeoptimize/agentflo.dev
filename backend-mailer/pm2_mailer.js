@@ -90,7 +90,8 @@ async function processNextEmail() {
   console.log(`\n[${new Date().toISOString()}] [${emails.length} remaining] Preparing to send to ${targetEmail}...`);
 
   try {
-    const output = execSync(`timeout 30s node mailer.js "${targetEmail}"`, { encoding: 'utf-8' });
+    // Increased timeout significantly because Render free tier outward requests are slow and Zoho sometimes holds connections open
+    const output = execSync(`timeout 90s node mailer.js "${targetEmail}"`, { encoding: 'utf-8' });
     console.log(output.trim());
 
     // Remove the successfully processed email from the file
